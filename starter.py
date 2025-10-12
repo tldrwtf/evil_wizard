@@ -1,12 +1,9 @@
 import random
 import time
-import os
 
 # --- Utility Functions ---
 def clear_screen():
     """Clears the console screen by printing many newlines."""
-    # Using os.system('cls' or 'clear') can cause issues in some IDEs or terminals.
-    # Printing newlines is a more robust, cross-platform solution.
     print("\n" * 50)
 
 def print_slow(text, delay=0.03):
@@ -255,114 +252,141 @@ def process_status_effects(character):
         if character.status_effects['poison'] <= 0:
             print_slow(f"{character.name} is no longer poisoned.")
             effects_to_remove.append('poison')
-    
+
     for effect in effects_to_remove:
         del character.status_effects[effect]
 
 
-def game_loop():
-    """The main loop for the game."""
-    clear_screen()
-    print_header("BOSS BATTLE")
-    print_slow("A fearsome beast appears!")
-    time.sleep(1)
+class Game:
+    """Coordinates the flow of the boss battle."""
 
-    player = choose_class()
-    boss = Boss("Gargantuan Hydra", 250, 15, 5)
-    
-    turn = 1
-    player_original_defense = player.defense
+    def __init__(self):
+        self.player = None
+        self.boss = None
+        self.player_original_defense = 0
+        self.turn = 1
 
-    while player.is_alive() and boss.is_alive():
+    def setup(self):
         clear_screen()
-        print_header(f"Turn {turn}")
-        
-        # Display Status
-        player.display_status()
-        boss.display_status()
+        print_header("BOSS BATTLE")
+        print_slow("A fearsome beast appears!")
+        time.sleep(1)
+
+        self.player = choose_class()
+        self.boss = Boss("Gargantuan Hydra", 250, 15, 5)
+        self.player_original_defense = self.player.defense
+
+    def run(self):
+        self.setup()
+        while self.player.is_alive() and self.boss.is_alive():
+            self._start_turn()
+            if not self._player_turn():
+                break
+            if not self.boss.is_alive():
+                break
+            if not self._boss_turn():
+                break
+        self._end_game()
+
+    def _start_turn(self):
+        clear_screen()
+        print_header(f"Turn {self.turn}")
+        self.player.display_status()
+        self.boss.display_status()
         print("-" * 40)
-        
-        # -- Player's Turn --
-        player.is_defending = False # Reset defense stance
-        player.defense = player_original_defense # Reset any temp defense changes
-        player.regenerate_mana()
-        
-        process_status_effects(player)
-        if not player.is_alive(): break
 
-        print_slow(f"Your turn, {player.name}!")
-        
-        player_turn_over = False
-        while not player_turn_over:
-            print("Choose your action:")
-            print("1: Basic Attack")
-            print("2: Defend")
-            print("3: Use Ability")
-            print(f"4: Use Health Potion ({player.potions} left)")
-            
-            action = input("> ")
+    def _player_turn(self):
+        self._reset_player_state()
+        process_status_effects(self.player)
+        if not self.player.is_alive():
+            return False
 
-            if action == "1":
-                print_slow(f"{player.name} attacks!")
-                boss.take_damage(player.attack, player.name)
-                player_turn_over = True
-            elif action == "2":
-                player.is_defending = True
-                print_slow(f"{player.name} takes a defensive stance.")
-                player_turn_over = True
-            elif action == "3":
-                print("Choose an ability:")
-                for key, ability in player.abilities.items():
-                    print(f"{key}: {ability['name']} (Cost: {ability['cost']} Mana)")
-                
-                ability_choice = input("> ")
-                if ability_choice in player.abilities:
-                    chosen_ability = player.abilities[ability_choice]
-                    if player.mana >= chosen_ability['cost']:
-                        player.mana -= chosen_ability['cost']
-                        chosen_ability['effect'](boss)
-                        player_turn_over = True
-                    else:
-                        print_slow("Not enough mana!")
-                        time.sleep(1)
-                else:
-                    print_slow("Invalid choice.")
-            elif action == "4":
-                if player.potions > 0:
-                    player.potions -= 1
-                    heal_amount = 40
-                    player.heal(heal_amount)
-                    print_slow(f"You used a health potion and recovered {heal_amount} HP.")
-                    player_turn_over = True
-                else:
-                    print_slow("You are out of health potions!")
-                    time.sleep(1)
-            else:
-                print_slow("Invalid action. Please choose again.")
-        
+        print_slow(f"Your turn, {self.player.name}!")
+        while True:
+            action = self._prompt_player_action()
+            if self._handle_player_action(action):
+                break
         time.sleep(1.5)
+        return True
 
-        if not boss.is_alive():
-            break
+    def _reset_player_state(self):
+        self.player.is_defending = False
+        self.player.defense = self.player_original_defense
+        self.player.regenerate_mana()
 
-        # -- Boss's Turn --
-        process_status_effects(boss)
-        if not boss.is_alive(): break
-            
-        boss.choose_action(player)
-        
+    def _prompt_player_action(self):
+        print("Choose your action:")
+        print("1: Basic Attack")
+        print("2: Defend")
+        print("3: Use Ability")
+        print(f"4: Use Health Potion ({self.player.potions} left)")
+        return input("> ")
+
+    def _handle_player_action(self, action):
+        if action == "1":
+            print_slow(f"{self.player.name} attacks!")
+            self.boss.take_damage(self.player.attack, self.player.name)
+            return True
+        if action == "2":
+            self.player.is_defending = True
+            print_slow(f"{self.player.name} takes a defensive stance.")
+            return True
+        if action == "3":
+            return self._handle_ability_choice()
+        if action == "4":
+            return self._use_potion()
+        print_slow("Invalid action. Please choose again.")
+        return False
+
+    def _handle_ability_choice(self):
+        if not self.player.abilities:
+            print_slow("You have no abilities available.")
+            return False
+        print("Choose an ability:")
+        for key, ability in self.player.abilities.items():
+            print(f"{key}: {ability['name']} (Cost: {ability['cost']} Mana)")
+        ability_choice = input("> ")
+        if ability_choice not in self.player.abilities:
+            print_slow("Invalid choice.")
+            return False
+        chosen_ability = self.player.abilities[ability_choice]
+        if self.player.mana < chosen_ability['cost']:
+            print_slow("Not enough mana!")
+            time.sleep(1)
+            return False
+        self.player.mana -= chosen_ability['cost']
+        chosen_ability['effect'](self.boss)
+        return True
+
+    def _use_potion(self):
+        if self.player.potions <= 0:
+            print_slow("You are out of health potions!")
+            time.sleep(1)
+            return False
+        self.player.potions -= 1
+        heal_amount = 40
+        self.player.heal(heal_amount)
+        print_slow(f"You used a health potion and recovered {heal_amount} HP.")
+        return True
+
+    def _boss_turn(self):
+        process_status_effects(self.boss)
+        if not self.boss.is_alive():
+            return False
+        self.boss.choose_action(self.player)
         time.sleep(2)
-        turn += 1
+        self.turn += 1
+        return True
 
-    # -- End of Game --
-    clear_screen()
-    print_header("Battle Over")
-    if player.is_alive():
-        print_slow("Congratulations! You have defeated the Gargantuan Hydra!")
-        player.display_status()
-    else:
-        print_slow("You have been defeated... The world is shrouded in darkness.")
-        boss.display_status()
+    def _end_game(self):
+        clear_screen()
+        print_header("Battle Over")
+        if self.player.is_alive():
+            print_slow("Congratulations! You have defeated the Gargantuan Hydra!")
+            self.player.display_status()
+        else:
+            print_slow("You have been defeated... The world is shrouded in darkness.")
+            self.boss.display_status()
 
 if __name__ == "__main__":
-    game_loop()
+    Game().run()
