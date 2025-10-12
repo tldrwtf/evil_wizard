@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+.idea/evil_wizard.iml
+.idea/misc.xml
+.idea/vcs.xml
+.idea/modules.xml
+.vscode/mcp.json
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/.gitignore
