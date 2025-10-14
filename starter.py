@@ -1,3 +1,5 @@
+# Fk off people from class copying ideas.
+
 import random
 import time
 
