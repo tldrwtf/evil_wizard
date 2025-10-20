@@ -3,27 +3,228 @@
 import random
 import time
 import inspect
+import sys
+import re
+import unicodedata
+
+
+# --- Color System ---
+class Colors:
+    """ANSI color codes for terminal output."""
+
+    # Basic colors
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    PURPLE = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+
+    # Bright colors
+    BRIGHT_RED = "\033[91;1m"
+    BRIGHT_GREEN = "\033[92;1m"
+    BRIGHT_YELLOW = "\033[93;1m"
+    BRIGHT_BLUE = "\033[94;1m"
+    BRIGHT_PURPLE = "\033[95;1m"
+    BRIGHT_CYAN = "\033[96;1m"
+
+    # Special formatting
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+    BLINK = "\033[5m"
+
+    # Background colors
+    BG_RED = "\033[101m"
+    BG_GREEN = "\033[102m"
+    BG_YELLOW = "\033[103m"
+    BG_BLUE = "\033[104m"
+
+    # Reset
+    RESET = "\033[0m"
+
+    @staticmethod
+    def disable():
+        """Disable colors (useful for Windows compatibility issues)."""
+        for attr in dir(Colors):
+            if not attr.startswith("_") and attr != "disable" and attr != "enable":
+                setattr(Colors, attr, "")
+
+    @staticmethod
+    def enable():
+        """Re-enable colors."""
+        Colors.__init__()
+
+
+# Enable colors for Windows terminal
+if sys.platform == "win32":
+    try:
+        import colorama
+
+        colorama.init()
+    except ImportError:
+        # If colorama isn't available, try to enable ANSI support
+        import os
+
+        os.system("color")
+
+
+def colorize(text, color):
+    """Apply color to text."""
+    return f"{color}{text}{Colors.RESET}"
+
+
+def get_class_color(class_name):
+    """Get thematic color for character classes."""
+    class_colors = {
+        "Warrior": Colors.RED,
+        "Mage": Colors.BLUE,
+        "Archer": Colors.GREEN,
+        "Paladin": Colors.YELLOW,
+        "Rogue": Colors.PURPLE,
+        "Necromancer": Colors.GRAY,
+        "Monk": Colors.CYAN,
+        "Barbarian": Colors.BRIGHT_RED,
+        "Druid": Colors.BRIGHT_GREEN,
+    }
+    return class_colors.get(class_name, Colors.WHITE)
+
+
+def get_damage_color(damage_type):
+    """Get color for different damage types."""
+    damage_colors = {
+        "physical": Colors.RED,
+        "fire": Colors.BRIGHT_RED,
+        "ice": Colors.BRIGHT_CYAN,
+        "poison": Colors.GREEN,
+        "holy": Colors.BRIGHT_YELLOW,
+        "dark": Colors.PURPLE,
+        "healing": Colors.BRIGHT_GREEN,
+    }
+    return damage_colors.get(damage_type, Colors.WHITE)
 
 
 # --- Utility Functions ---
+ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def strip_ansi(text):
+    """Remove ANSI escape sequences from a string."""
+    return ANSI_ESCAPE.sub("", text)
+
+
+def get_display_width(text):
+    """Calculate rendered width, accounting for ANSI codes and wide Unicode chars."""
+    clean_text = strip_ansi(text)
+    width = 0
+    for char in clean_text:
+        if unicodedata.combining(char) or unicodedata.category(char) == "Cf":
+            continue
+        if unicodedata.east_asian_width(char) in {"F", "W"}:
+            width += 2
+        else:
+            width += 1
+    return width
+
+
+def pad_to_width(text, target_width):
+    """Right-pad a string with spaces until it reaches the desired display width."""
+    padding_needed = max(0, target_width - get_display_width(text))
+    return f"{text}{' ' * padding_needed}"
+
+
+def wrap_text(text, width):
+    """Wrap text based on rendered width, preserving color codes."""
+    if width <= 0 or get_display_width(text) <= width:
+        return [text]
+
+    words = text.split()
+    if not words:
+        return [text]
+
+    lines = []
+    current_line = words[0]
+    for word in words[1:]:
+        candidate = f"{current_line} {word}"
+        if get_display_width(candidate) > width:
+            lines.append(current_line)
+            current_line = word
+        else:
+            current_line = candidate
+
+    lines.append(current_line)
+    return lines
+
+
+def print_box(title, lines, width=54):
+    """Print a framed box with proper alignment for colored and emoji text."""
+    inner_width = width - 2
+
+    content_width = (
+        max((get_display_width(line) for line in lines), default=0) + 1
+    )  # +1 for left padding inside the box
+
+    title_segment = f"─ {title} "
+    title_width = get_display_width(title_segment)
+
+    inner_width = max(inner_width, content_width, title_width)
+
+    top_border = f"┌{title_segment}{'─' * max(0, inner_width - title_width)}┐"
+    print(top_border, flush=True)
+
+    if not lines:
+        lines = [""]
+
+    for line in lines:
+        for segment in wrap_text(line, inner_width - 1):
+            padded_line = pad_to_width(f" {segment}", inner_width)
+            print(f"│{padded_line}│", flush=True)
+
+    print(f"└{'─' * inner_width}┘", flush=True)
+
+
 def clear_screen():
     """Clears the console screen by printing many newlines."""
     print("\n" * 50)
 
 
-def print_slow(text, delay=0.03):
+def print_slow(text, delay=0.03, color=None):
     """Prints text with a slight delay for a more dramatic effect."""
+    if color:
+        text = colorize(text, color)
     for char in text:
         print(char, end="", flush=True)
         time.sleep(delay)
+    print(flush=True)
+
+
+def print_header(title, color=Colors.BRIGHT_CYAN):
+    """Prints a styled header with color and nice spacing."""
+    print()  # Add space before header
+    border = "=" * 50
+    print(colorize(border, color), flush=True)
+    print(colorize(f"{title:^50}", Colors.BOLD + color), flush=True)
+    print(colorize(border, color), flush=True)
+    print()  # Add space after header
+
+
+def print_section_break():
+    """Prints a visual break between sections."""
+    print(colorize("-" * 50, Colors.GRAY), flush=True)
     print()
 
 
-def print_header(title):
-    """Prints a styled header."""
-    print("=" * 40)
-    print(f"{title:^40}")
-    print("=" * 40)
+def print_with_spacing(text, color=None, spacing_before=0, spacing_after=1):
+    """Print text with customizable spacing before and after."""
+    for _ in range(spacing_before):
+        print()
+    if color:
+        print(colorize(text, color), flush=True)
+    else:
+        print(text, flush=True)
+    for _ in range(spacing_after):
+        print()
 
 
 # --- Weapon System ---
@@ -89,7 +290,10 @@ class Character:
         is_critical = random.random() < crit_chance
         if is_critical:
             damage = int(damage * 1.5)
-            print_slow(f"*** CRITICAL HIT from {attacker_name}! ***")
+            print_slow(
+                f"*** CRITICAL HIT from {attacker_name}! ***",
+                color=Colors.BRIGHT_RED + Colors.BLINK,
+            )
 
         # Apply weapon special effects if attacker has a weapon
         if attacker and attacker.weapon:
@@ -100,29 +304,59 @@ class Character:
         self.hp -= damage_taken
         self.hp = max(0, self.hp)  # Can't have negative HP
         if self.is_defending:
-            print_slow(f"{self.name} defends and mitigates some damage!")
-        print_slow(f"{self.name} takes {damage_taken} damage!")
+            print_slow(
+                f"{self.name} defends and mitigates some damage!", color=Colors.BLUE
+            )
+        print_slow(f"{self.name} takes {damage_taken} damage!", color=Colors.RED)
         return damage_taken
 
     def heal(self, amount):
         """Heals the character."""
         self.hp += amount
         self.hp = min(self.max_hp, self.hp)
-        print_slow(f"{self.name} heals for {amount} HP!")
+        print_slow(f"{self.name} heals for {amount} HP!", color=Colors.BRIGHT_GREEN)
 
     def display_status(self):
-        """Shows the character's current status."""
-        # Using a simple '#' for the HP bar to avoid potential encoding errors in some terminals.
-        hp_bar = f"[{'#' * int((self.hp / self.max_hp) * 20):<20}]"
-        print(f"{self.name}: HP {self.hp}/{self.max_hp} {hp_bar}")
+        """Shows the character's current status with colored HP bars and nice formatting."""
+        # Calculate HP percentage for color coding
+        hp_percentage = self.hp / self.max_hp
+        if hp_percentage > 0.6:
+            hp_color = Colors.GREEN
+        elif hp_percentage > 0.3:
+            hp_color = Colors.YELLOW
+        else:
+            hp_color = Colors.RED
+
+        # Create colored HP bar with better visual design
+        filled_blocks = int((self.hp / self.max_hp) * 25)
+        empty_blocks = 25 - filled_blocks
+        hp_bar = f"[{colorize('█' * filled_blocks, hp_color)}{colorize('░' * empty_blocks, Colors.GRAY)}]"
+
+        name_color = get_class_color(getattr(self, "role", "default"))
+
+        lines = [
+            f"HP: {colorize(f'{self.hp:3d}', hp_color)}/{self.max_hp:<3d} {hp_bar}"
+        ]
+
         if self.status_effects:
-            effects = ", ".join(
-                [
-                    f"{k.capitalize()} ({v} turns)"
-                    for k, v in self.status_effects.items()
-                ]
-            )
-            print(f"  Status: {effects}")
+            effects = []
+            for effect, turns in self.status_effects.items():
+                if effect == "poison":
+                    effect_color = Colors.GREEN
+                elif effect == "stunned":
+                    effect_color = Colors.YELLOW
+                elif effect == "frozen":
+                    effect_color = Colors.CYAN
+                elif effect == "burning":
+                    effect_color = Colors.RED
+                else:
+                    effect_color = Colors.PURPLE
+                effects.append(
+                    f"{colorize(effect.capitalize(), effect_color)} ({turns})"
+                )
+            lines.append(f"Status: {', '.join(effects)}")
+
+        print_box(colorize(self.name, Colors.BOLD + name_color), lines)
 
 
 class Player(Character):
@@ -137,11 +371,70 @@ class Player(Character):
         self._initialize_abilities()
 
     def display_status(self):
-        """Shows the player's current status, including mana."""
-        super().display_status()
-        mana_bar = f"[{'@' * int((self.mana / self.max_mana) * 10):<10}]"
-        print(
-            f"  Mana: {self.mana}/{self.max_mana} {mana_bar} | Potions: {self.potions}"
+        """Shows the player's current status with enhanced formatting including mana and potions."""
+        # Calculate HP percentage for color coding
+        hp_percentage = self.hp / self.max_hp
+        if hp_percentage > 0.6:
+            hp_color = Colors.GREEN
+        elif hp_percentage > 0.3:
+            hp_color = Colors.YELLOW
+        else:
+            hp_color = Colors.RED
+
+        # Create colored HP bar with better visual design
+        filled_blocks = int((self.hp / self.max_hp) * 25)
+        empty_blocks = 25 - filled_blocks
+        hp_bar = f"[{colorize('█' * filled_blocks, hp_color)}{colorize('░' * empty_blocks, Colors.GRAY)}]"
+
+        # Colored mana bar
+        mana_percentage = self.mana / self.max_mana
+        if mana_percentage > 0.6:
+            mana_color = Colors.BRIGHT_BLUE
+        elif mana_percentage > 0.3:
+            mana_color = Colors.BLUE
+        else:
+            mana_color = Colors.PURPLE
+
+        filled_mana = int((self.mana / self.max_mana) * 15)
+        empty_mana = 15 - filled_mana
+        mana_bar = f"[{colorize('▓' * filled_mana, mana_color)}{colorize('░' * empty_mana, Colors.GRAY)}]"
+
+        # Colored potion count
+        potion_color = Colors.GREEN if self.potions > 0 else Colors.RED
+
+        name_color = get_class_color(self.role)
+
+        potion_icons = "🧪" * self.potions
+        potions_line = (
+            f"Potions: {colorize(str(self.potions), potion_color)} {potion_icons}"
+        ).rstrip()
+
+        lines = [
+            f"HP: {colorize(f'{self.hp:3d}', hp_color)}/{self.max_hp:<3d} {hp_bar}",
+            f"MP: {colorize(f'{self.mana:3d}', mana_color)}/{self.max_mana:<3d} {mana_bar}",
+            potions_line,
+        ]
+
+        if self.status_effects:
+            effects = []
+            for effect, turns in self.status_effects.items():
+                if effect == "poison":
+                    effect_color = Colors.GREEN
+                elif effect == "stunned":
+                    effect_color = Colors.YELLOW
+                elif effect == "frozen":
+                    effect_color = Colors.CYAN
+                elif effect == "burning":
+                    effect_color = Colors.RED
+                else:
+                    effect_color = Colors.PURPLE
+                effects.append(
+                    f"{colorize(effect.capitalize(), effect_color)} ({turns})"
+                )
+            lines.append(f"Status: {', '.join(effects)}")
+
+        print_box(
+            colorize(f"{self.name} ({self.role})", Colors.BOLD + name_color), lines
         )
 
     def regenerate_mana(self):
@@ -172,9 +465,30 @@ class Player(Character):
         if effect_name not in target.status_effects:
             target.status_effects[effect_name] = duration
             if message:
-                print_slow(message)
+                # Color the message based on effect type
+                if "poison" in effect_name.lower():
+                    print_slow(message, color=Colors.GREEN)
+                elif "burn" in effect_name.lower() or "fire" in effect_name.lower():
+                    print_slow(message, color=Colors.RED)
+                elif "freeze" in effect_name.lower() or "frost" in effect_name.lower():
+                    print_slow(message, color=Colors.CYAN)
+                elif "stun" in effect_name.lower():
+                    print_slow(message, color=Colors.YELLOW)
+                else:
+                    print_slow(message, color=Colors.PURPLE)
             else:
-                print_slow(f"{target.name} is affected by {effect_name}!")
+                # Default colored message
+                if effect_name == "poison":
+                    color = Colors.GREEN
+                elif effect_name == "burning":
+                    color = Colors.RED
+                elif effect_name == "frozen":
+                    color = Colors.CYAN
+                elif effect_name == "stunned":
+                    color = Colors.YELLOW
+                else:
+                    color = Colors.PURPLE
+                print_slow(f"{target.name} is affected by {effect_name}!", color=color)
 
     def _initialize_abilities(self):
         """Sets abilities based on the player's role."""
@@ -262,35 +576,43 @@ class Player(Character):
 
     # --- Warrior Abilities ---
     def _power_strike(self, target):
-        print_slow(f"{self.name} uses Power Strike!")
+        print_slow(f"{self.name} uses Power Strike!", color=Colors.RED)
         self.deal_enhanced_damage(target, 1.5)
 
     def _shield_wall(self):
-        print_slow(f"{self.name} raises their shield, preparing for the next attack!")
+        print_slow(
+            f"{self.name} raises their shield, preparing for the next attack!",
+            color=Colors.BLUE,
+        )
         self.is_defending = True  # Handled in the main game loop
 
     def _reckless_swing(self, target):
-        print_slow(f"{self.name} throws caution to the wind with a Reckless Swing!")
+        print_slow(
+            f"{self.name} throws caution to the wind with a Reckless Swing!",
+            color=Colors.BRIGHT_RED,
+        )
         self.defense -= 3
-        print_slow(f"{self.name}'s defense is temporarily lowered!")
+        print_slow(
+            f"{self.name}'s defense is temporarily lowered!", color=Colors.YELLOW
+        )
         self.deal_basic_damage(target, 2.0)
 
     # --- Mage Abilities ---
     def _fireball(self, target):
-        print_slow(f"{self.name} casts Fireball!")
+        print_slow(f"{self.name} casts Fireball!", color=Colors.BRIGHT_RED)
         damage = random.randint(15, 25)
         target.take_damage(damage, self.name, self)
 
     def _heal_spell(self):
-        print_slow(f"{self.name} casts a healing spell!")
+        print_slow(f"{self.name} casts a healing spell!", color=Colors.BRIGHT_GREEN)
         heal_amount = random.randint(20, 30)
         self.heal(heal_amount)
 
     def _arcane_shield(self):
-        print_slow(f"{self.name} conjures an Arcane Shield!")
+        print_slow(f"{self.name} conjures an Arcane Shield!", color=Colors.BRIGHT_BLUE)
         # For simplicity, we'll just boost defense temporarily
         self.defense += 5
-        print_slow(f"{self.name}'s defense is temporarily boosted!")
+        print_slow(f"{self.name}'s defense is temporarily boosted!", color=Colors.CYAN)
 
     # --- Archer Abilities ---
     def _aimed_shot(self, target):
@@ -315,17 +637,23 @@ class Player(Character):
 
     # --- Paladin Abilities ---
     def _paladin_holy_strike(self, target):
-        print_slow(f"{self.name} delivers a radiant Holy Strike!")
+        print_slow(
+            f"{self.name} delivers a radiant Holy Strike!", color=Colors.BRIGHT_YELLOW
+        )
         self.deal_random_bonus_damage(target, 10, 18)
 
     def _divine_shield(self):
-        print_slow(f"{self.name} is blessed with a Divine Shield!")
+        print_slow(
+            f"{self.name} is blessed with a Divine Shield!", color=Colors.BRIGHT_YELLOW
+        )
         self.is_defending = True
         self.defense += 6
-        print_slow(f"{self.name}'s defense surges temporarily!")
+        print_slow(f"{self.name}'s defense surges temporarily!", color=Colors.YELLOW)
 
     def _lay_on_hands(self):
-        print_slow(f"{self.name} uses Lay on Hands to heal wounds!")
+        print_slow(
+            f"{self.name} uses Lay on Hands to heal wounds!", color=Colors.BRIGHT_GREEN
+        )
         heal_amount = random.randint(25, 35)
         self.heal(heal_amount)
 
@@ -468,7 +796,8 @@ def vampiric_effect(wielder, target):
         heal_amount = 3
         wielder.heal(heal_amount)
         print_slow(
-            f"{wielder.name}'s weapon drains life, healing for {heal_amount} HP!"
+            f"{wielder.name}'s weapon drains life, healing for {heal_amount} HP!",
+            color=Colors.PURPLE,
         )
 
 
@@ -477,14 +806,17 @@ def burning_effect(wielder, target):
     if random.random() < 0.25:  # 25% chance
         if "burning" not in target.status_effects:
             target.status_effects["burning"] = 3
-            print_slow(f"{target.name} catches fire!")
+            print_slow(f"{target.name} catches fire!", color=Colors.BRIGHT_RED)
 
 
 def frost_effect(wielder, target):
     """Frost weapons can slow enemies."""
     if random.random() < 0.30:  # 30% chance
         target.attack = max(1, target.attack - 2)
-        print_slow(f"{target.name} is chilled, reducing their attack!")
+        print_slow(
+            f"{target.name} is chilled, reducing their attack!",
+            color=Colors.BRIGHT_CYAN,
+        )
 
 
 def poison_effect(wielder, target):
@@ -492,21 +824,27 @@ def poison_effect(wielder, target):
     if random.random() < 0.35:  # 35% chance
         if "poison" not in target.status_effects:
             target.status_effects["poison"] = 2
-            print_slow(f"{target.name} is poisoned by the weapon!")
+            print_slow(f"{target.name} is poisoned by the weapon!", color=Colors.GREEN)
 
 
 def stunning_effect(wielder, target):
     """Stunning weapons can stun enemies."""
     if random.random() < 0.15:  # 15% chance
         target.status_effects["stunned"] = 1
-        print_slow(f"{target.name} is stunned and will lose their next turn!")
+        print_slow(
+            f"{target.name} is stunned and will lose their next turn!",
+            color=Colors.YELLOW,
+        )
 
 
 def blessed_effect(wielder, target):
     """Blessed weapons provide protection."""
     if random.random() < 0.20:  # 20% chance
         wielder.defense += 2
-        print_slow(f"{wielder.name} is blessed with divine protection!")
+        print_slow(
+            f"{wielder.name} is blessed with divine protection!",
+            color=Colors.BRIGHT_YELLOW,
+        )
 
 
 # --- Weapon Collections by Class ---
@@ -601,14 +939,23 @@ class Boss(Character):
 
     def choose_action(self, target):
         """Boss AI: Chooses an action based on probabilities and enrage state."""
-        print_slow(f"\n{self.name}'s turn...")
+        print_section_break()
+        print_with_spacing(
+            f"🐉 {self.name}'s turn...", Colors.BRIGHT_RED, spacing_before=1
+        )
         time.sleep(1)
 
         # Enrage mechanic
         if self.hp < self.max_hp * 0.3 and not self.is_enraged:
             self.is_enraged = True
             self.attack += 5
-            print_slow(f"{self.name} becomes ENRAGED! Its attack power has increased!")
+            print()
+            print_slow(
+                f"💀 {self.name} becomes ENRAGED! Its attack power has increased!",
+                color=Colors.BRIGHT_RED + Colors.BLINK,
+            )
+            print()
+            time.sleep(1)
 
         abilities = list(self.abilities.keys())
         weights = list(self.abilities.values())
@@ -618,18 +965,22 @@ class Boss(Character):
 
     # --- Boss Abilities ---
     def _stomp(self, target):
-        print_slow(f"{self.name} rears back and STOMPS the ground!")
+        print_slow(
+            f"{self.name} rears back and STOMPS the ground!", color=Colors.BRIGHT_RED
+        )
         damage = self.attack + random.randint(-3, 5)
         target.take_damage(damage, self.name, self)
 
     def _dark_breath(self, target):
-        print_slow(f"{self.name} unleashes a torrent of dark energy!")
+        print_slow(
+            f"{self.name} unleashes a torrent of dark energy!", color=Colors.PURPLE
+        )
         damage = self.attack + random.randint(5, 10)
         target.take_damage(damage, self.name, self)
 
     def _frightening_roar(self, target):
-        print_slow(f"{self.name} lets out a Frightening Roar!")
-        print_slow(f"{target.name}'s defense is lowered!")
+        print_slow(f"{self.name} lets out a Frightening Roar!", color=Colors.GRAY)
+        print_slow(f"{target.name}'s defense is lowered!", color=Colors.YELLOW)
         target.defense = max(1, target.defense - 2)  # Lower defense, min of 1
 
 
@@ -639,15 +990,72 @@ class Boss(Character):
 def choose_class():
     """Lets the player select their character class."""
     print_header("Choose Your Class")
-    print("1: Warrior - A sturdy fighter with high defense and reliable damage.")
-    print("2: Mage - A powerful spellcaster with high damage and healing abilities.")
-    print("3: Archer - A nimble marksman who uses precision and status effects.")
-    print("4: Paladin - A holy knight with strong defenses and supportive magic.")
-    print("5: Rogue - A swift striker specializing in burst damage and evasion.")
-    print("6: Necromancer - A dark mage who drains life and curses enemies.")
-    print("7: Monk - A martial artist balancing offense and spiritual power.")
-    print("8: Barbarian - A fierce warrior trading defense for overwhelming offense.")
-    print("9: Druid - A nature wielder with versatile elemental abilities.")
+
+    # Display classes with their themed colors in a nice formatted table
+    classes = [
+        (
+            "1",
+            "Warrior",
+            Colors.RED,
+            "A sturdy fighter with high defense and reliable damage.",
+        ),
+        (
+            "2",
+            "Mage",
+            Colors.BLUE,
+            "A powerful spellcaster with high damage and healing abilities.",
+        ),
+        (
+            "3",
+            "Archer",
+            Colors.GREEN,
+            "A nimble marksman who uses precision and status effects.",
+        ),
+        (
+            "4",
+            "Paladin",
+            Colors.YELLOW,
+            "A holy knight with strong defenses and supportive magic.",
+        ),
+        (
+            "5",
+            "Rogue",
+            Colors.PURPLE,
+            "A swift striker specializing in burst damage and evasion.",
+        ),
+        (
+            "6",
+            "Necromancer",
+            Colors.GRAY,
+            "A dark mage who drains life and curses enemies.",
+        ),
+        (
+            "7",
+            "Monk",
+            Colors.CYAN,
+            "A martial artist balancing offense and spiritual power.",
+        ),
+        (
+            "8",
+            "Barbarian",
+            Colors.BRIGHT_RED,
+            "A fierce warrior trading defense for overwhelming offense.",
+        ),
+        (
+            "9",
+            "Druid",
+            Colors.BRIGHT_GREEN,
+            "A nature wielder with versatile elemental abilities.",
+        ),
+    ]
+
+    class_lines = []
+    for num, name, color, desc in classes:
+        name_block = colorize(name, Colors.BOLD + color)
+        class_lines.append(f"{num}: {name_block} - {desc}")
+
+    print_box(colorize("Available Classes", Colors.BOLD), class_lines, width=90)
+    print()
 
     choice = ""
     while choice not in ["1", "2", "3", "4", "5", "6", "7", "8", "9"]:
@@ -683,22 +1091,69 @@ def choose_class():
 
 
 def choose_weapon(player):
-    """Lets the player choose their weapon."""
-    print_header(f"Choose Your {player.role} Weapon")
+    """Lets the player choose their weapon with enhanced display."""
+    class_color = get_class_color(player.role)
+    print_header(f"Choose Your {player.role} Weapon", class_color)
+
     weapons = WEAPON_COLLECTIONS[player.role]
+
+    weapon_lines = []
     for key, weapon in weapons.items():
-        special = ""
+        special_text = ""
         if weapon.special_effect:
-            special = f" | Special: {getattr(weapon.special_effect, '__name__', str(type(weapon.special_effect).__name__))}"
-        print(
-            f"{key}: {weapon.name} - Attack: +{weapon.attack_bonus}, Defense: +{weapon.defense_bonus}, Crit: +{weapon.crit_chance*100:.0f}%{special}"
-        )
+            effect_name = getattr(
+                weapon.special_effect,
+                "__name__",
+                str(type(weapon.special_effect).__name__),
+            )
+            # Color special effects
+            if "vampiric" in effect_name:
+                special_text = colorize("Vampiric", Colors.PURPLE)
+            elif "poison" in effect_name:
+                special_text = colorize("Poison", Colors.GREEN)
+            elif "frost" in effect_name:
+                special_text = colorize("Frost", Colors.CYAN)
+            elif "burning" in effect_name:
+                special_text = colorize("Burning", Colors.RED)
+            elif "blessed" in effect_name:
+                special_text = colorize("Blessed", Colors.YELLOW)
+            elif "stunning" in effect_name:
+                special_text = colorize("Stunning", Colors.BRIGHT_YELLOW)
+            else:
+                special_text = colorize(effect_name, Colors.WHITE)
+
+        attack_text = colorize(f"ATK+{weapon.attack_bonus}", Colors.RED)
+        defense_text = colorize(f"DEF+{weapon.defense_bonus}", Colors.BLUE)
+        crit_text = colorize(f"CRIT+{weapon.crit_chance*100:.0f}%", Colors.YELLOW)
+
+        name_block = pad_to_width(colorize(weapon.name, Colors.BOLD + class_color), 22)
+        stats_segments = f"{attack_text}  {defense_text}  {crit_text}"
+        if special_text:
+            stats_segments = f"{stats_segments}  [{special_text}]"
+
+        line = f"{key}: {name_block}{stats_segments}"
+        weapon_lines.append(line)
+
+    width_hint = max((get_display_width(line) for line in weapon_lines), default=0)
+    frame_width = max(70, width_hint + 3)
+
+    print_box(
+        colorize("Available Weapons", Colors.BOLD),
+        weapon_lines,
+        width=frame_width + 2,
+    )
+    print()
+
     choice = ""
     while choice not in weapons.keys():
-        choice = input(f"Choose weapon (1-{len(weapons)}): ")
-    chosen_weapon = weapons[choice]  # Get the selected weapon from the dictionary
+        choice = input(f"Choose weapon (1-{len(weapons)}): ").strip()
+
+    chosen_weapon = weapons[choice]
     player.equip_weapon(chosen_weapon)
-    print_slow(f"{player.name} equips the {chosen_weapon.name}!")
+
+    print()
+    print_slow(f"⚔️  {player.name} equips the {chosen_weapon.name}!", color=class_color)
+    print_section_break()
     time.sleep(1)
 
 
@@ -708,22 +1163,30 @@ def process_status_effects(character):
 
     if "poison" in character.status_effects:
         poison_damage = 5
-        print_slow(f"{character.name} takes {poison_damage} damage from poison!")
+        print_slow(
+            f"{character.name} takes {poison_damage} damage from poison!",
+            color=Colors.GREEN,
+        )
         character.hp -= poison_damage
         character.hp = max(0, character.hp)
         character.status_effects["poison"] -= 1
         if character.status_effects["poison"] <= 0:
-            print_slow(f"{character.name} is no longer poisoned.")
+            print_slow(f"{character.name} is no longer poisoned.", color=Colors.GREEN)
             effects_to_remove.append("poison")
 
     if "burning" in character.status_effects:
         burn_damage = 4
-        print_slow(f"{character.name} takes {burn_damage} damage from burning!")
+        print_slow(
+            f"{character.name} takes {burn_damage} damage from burning!",
+            color=Colors.BRIGHT_RED,
+        )
         character.hp -= burn_damage
         character.hp = max(0, character.hp)
         character.status_effects["burning"] -= 1
         if character.status_effects["burning"] <= 0:
-            print_slow(f"{character.name} is no longer burning.")
+            print_slow(
+                f"{character.name} is no longer burning.", color=Colors.BRIGHT_RED
+            )
             effects_to_remove.append("burning")
 
     if "stunned" in character.status_effects:
@@ -774,14 +1237,38 @@ class Game:
 
     def setup(self):
         clear_screen()
-        print_header("BOSS BATTLE")
-        print_slow("A fearsome beast appears!")
-        time.sleep(1)
+        print_header("🐉 BOSS BATTLE 🐉", Colors.BRIGHT_RED)
+
+        print_with_spacing(
+            "⚠️  A fearsome beast emerges from the shadows!",
+            Colors.BRIGHT_RED,
+            spacing_before=1,
+            spacing_after=2,
+        )
+        time.sleep(1.5)
 
         self.player = choose_class()
+
+        print_header("🐉 THE GARGANTUAN HYDRA AWAKENS 🐉", Colors.BRIGHT_RED)
+        print_with_spacing(
+            "A massive three-headed dragon blocks your path!",
+            Colors.GRAY,
+            spacing_before=1,
+        )
+        print_with_spacing(
+            "Prepare for the battle of your life!",
+            Colors.BRIGHT_YELLOW,
+            spacing_after=2,
+        )
+
         self.boss = Boss("Gargantuan Hydra", 250, 15, 5)
         # Store base defense (before weapon bonuses)
         self.player_original_defense = self.player.base_defense
+
+        print_with_spacing(
+            "🎮 Battle begins!", Colors.BRIGHT_CYAN, spacing_before=1, spacing_after=1
+        )
+        time.sleep(2)
 
     def run(self):
         self.setup()
@@ -795,14 +1282,32 @@ class Game:
 
     def _player_turn(self):
         clear_screen()
+
+        # Display current status for both player and boss
+        print_header(f"Turn {self.turn}", Colors.CYAN)
+        print()  # Add some spacing
+        self.player.display_status()
+        print()  # Add spacing between player and boss
+        self.boss.display_status()
+        print_section_break()
+
         skip_turn = process_status_effects(self.player)
         if skip_turn:  # Player is stunned
-            print_slow(f"{self.player.name} is stunned and loses their turn!")
+            print_slow(
+                f"💫 {self.player.name} is stunned and loses their turn!",
+                color=Colors.YELLOW,
+            )
             time.sleep(2)
             return True
         if not self.player.is_alive():
             return False
-        print_slow(f"Your turn, {self.player.name}!")
+
+        print_with_spacing(
+            f"⚔️  Your turn, {self.player.name}!",
+            get_class_color(self.player.role),
+            spacing_before=1,
+        )
+
         while True:
             action = self._prompt_player_action()
             if self._handle_player_action(action):
@@ -819,47 +1324,85 @@ class Game:
         self.player.regenerate_mana()
 
     def _prompt_player_action(self):
-        print("Choose your action:")
-        print("1: Basic Attack")
-        print("2: Defend")
-        print("3: Use Ability")
-        print(f"4: Use Health Potion ({self.player.potions} left)")
-        action = input("> ")
+        print()
+        potion_color = Colors.GREEN if self.player.potions > 0 else Colors.GRAY
+        potion_text = colorize(
+            f"🧪 Use Health Potion ({self.player.potions} left)", potion_color
+        )
+
+        options = [
+            f"1: {colorize('⚔️  Basic Attack', Colors.RED)}",
+            f"2: {colorize('🛡️  Defend', Colors.BLUE)}",
+            f"3: {colorize('✨ Use Ability', Colors.PURPLE)}",
+            f"4: {potion_text}",
+        ]
+
+        print_box(colorize("Combat Actions", Colors.BOLD), options)
+
+        action = input(f"\n{colorize('>', Colors.BOLD)} ").strip()
         return action
 
     def _handle_player_action(self, action):
         if action == "1":
-            print_slow(f"{self.player.name} attacks!")
+            player_color = get_class_color(self.player.role)
+            print_slow(f"{self.player.name} attacks!", color=player_color)
             self.boss.take_damage(self.player.attack, self.player.name, self.player)
             return True
         elif action == "2":
             self.player.is_defending = True
-            print_slow(f"{self.player.name} takes a defensive stance.")
+            print_slow(
+                f"{self.player.name} takes a defensive stance.", color=Colors.BLUE
+            )
             return True
         elif action == "3":
             return self._handle_ability_choice()
         elif action == "4":
             return self._use_potion()
-        print_slow("Invalid action. Please choose again.")
+        print_slow("Invalid action. Please choose again.", color=Colors.RED)
         return False
 
     def _handle_ability_choice(self):
         if not self.player.abilities:
-            print_slow("You have no abilities available.")
+            print_slow("🚫 You have no abilities available.", color=Colors.GRAY)
             return False
-        print("Choose an ability:")
+
+        print()
+        print(
+            f"┌─ {colorize('Available Abilities', Colors.BOLD)} {'─' * 47}┐", flush=True
+        )
+
         for key, ability in self.player.abilities.items():
-            print(f"{key}: {ability['name']} (Cost: {ability['cost']} Mana)")
-        ability_choice = input("> ")
+            mana_color = (
+                Colors.BLUE if self.player.mana >= ability["cost"] else Colors.RED
+            )
+            ability_name = colorize(
+                f"{ability['name']:<18}", get_class_color(self.player.role)
+            )
+            mana_cost = colorize(f"Cost: {ability['cost']} MP", mana_color)
+
+            # Add icon for ability affordability
+            icon = "✨" if self.player.mana >= ability["cost"] else "❌"
+
+            print(f"│ {key}: {icon} {ability_name} {mana_cost:<15} │", flush=True)
+
+        print(f"└{'─' * 47}┘", flush=True)
+
+        ability_choice = input(
+            f"\n{colorize('Choose ability >', Colors.BOLD)} "
+        ).strip()
+
         if ability_choice not in self.player.abilities:
-            print_slow("Invalid choice.")
+            print_slow("❌ Invalid choice.", color=Colors.RED)
             return False
+
         chosen_ability = self.player.abilities[ability_choice]
         if self.player.mana < chosen_ability["cost"]:
-            print_slow("Not enough mana!")
+            print_slow("💧 Not enough mana!", color=Colors.RED)
             time.sleep(1)
             return False
+
         self.player.mana -= chosen_ability["cost"]
+        print()  # Add spacing before ability execution
         effect = chosen_ability["effect"]
         # Support both targeted and targetless abilities
         try:
@@ -879,13 +1422,16 @@ class Game:
 
     def _use_potion(self):
         if self.player.potions <= 0:
-            print_slow("You are out of health potions!")
+            print_slow("You are out of health potions!", color=Colors.RED)
             time.sleep(1)
             return False
         self.player.potions -= 1
         heal_amount = 40
         self.player.heal(heal_amount)
-        print_slow(f"You used a health potion and recovered {heal_amount} HP.")
+        print_slow(
+            f"You used a health potion and recovered {heal_amount} HP.",
+            color=Colors.BRIGHT_GREEN,
+        )
         return True
 
     def _boss_turn(self):
@@ -904,13 +1450,50 @@ class Game:
 
     def _end_game(self):
         clear_screen()
-        print_header("Battle Over")
         if self.player.is_alive():
-            print_slow("Congratulations! You have defeated the Gargantuan Hydra!")
+            print_header("🎉 VICTORY! 🎉", Colors.BRIGHT_GREEN)
+            print()
+            print_slow(
+                "🎊 Congratulations! You have defeated the Gargantuan Hydra! 🎊",
+                color=Colors.BRIGHT_GREEN,
+            )
+            print_slow(
+                "🏆 The realm is safe once more thanks to your heroic deeds! 🏆",
+                color=Colors.BRIGHT_YELLOW,
+            )
+            print()
+            print_section_break()
+            print_with_spacing("📊 Final Status:", Colors.BOLD, spacing_before=1)
             self.player.display_status()
+            print()
+            print_with_spacing(
+                "✨ Thank you for playing! ✨",
+                Colors.BRIGHT_CYAN,
+                spacing_before=1,
+                spacing_after=2,
+            )
         else:
-            print_slow("You have been defeated... The world is shrouded in darkness.")
+            print_header("💀 DEFEAT 💀", Colors.BRIGHT_RED)
+            print()
+            print_slow(
+                "⚰️  You have been defeated... The world is shrouded in darkness.",
+                color=Colors.GRAY,
+            )
+            print_slow(
+                "🌑 The Gargantuan Hydra's reign of terror continues...",
+                color=Colors.RED,
+            )
+            print()
+            print_section_break()
+            print_with_spacing("📊 Final Status:", Colors.BOLD, spacing_before=1)
             self.boss.display_status()
+            print()
+            print_with_spacing(
+                "💪 Better luck next time, hero! 💪",
+                Colors.YELLOW,
+                spacing_before=1,
+                spacing_after=2,
+            )
 
 
 if __name__ == "__main__":
