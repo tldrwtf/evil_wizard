@@ -212,3 +212,9 @@ __marimo__/
 .vscode/mcp.json
 .idea/inspectionProfiles/profiles_settings.xml
 .idea/.gitignore
+stateDiagram.mmd
+userJourney.mmd
+sequenceDiagram.mmd
+ganttChart.mmd
+flowchart.mmd
+classDiagram.mmd
