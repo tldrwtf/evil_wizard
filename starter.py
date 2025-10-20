@@ -149,6 +149,33 @@ class Player(Character):
         mana_regen = 5
         self.mana = min(self.max_mana, self.mana + mana_regen)
 
+    # --- Centralized Damage Calculation Methods ---
+    def deal_basic_damage(self, target, multiplier=1.0, bonus_min=0, bonus_max=0):
+        """Deal basic attack damage with optional multiplier and random bonus."""
+        base_damage = int(self.attack * multiplier)
+        if bonus_min or bonus_max:
+            base_damage += random.randint(bonus_min, bonus_max)
+        target.take_damage(base_damage, self.name, self)
+
+    def deal_enhanced_damage(self, target, multiplier=1.5):
+        """Deal enhanced damage (common 1.5x multiplier pattern)."""
+        damage = int(self.attack * multiplier)
+        target.take_damage(damage, self.name, self)
+
+    def deal_random_bonus_damage(self, target, min_bonus=8, max_bonus=15):
+        """Deal attack + random bonus damage (common pattern)."""
+        damage = self.attack + random.randint(min_bonus, max_bonus)
+        target.take_damage(damage, self.name, self)
+
+    def apply_status_effect(self, target, effect_name, duration, message=None):
+        """Apply a status effect to target with optional message."""
+        if effect_name not in target.status_effects:
+            target.status_effects[effect_name] = duration
+            if message:
+                print_slow(message)
+            else:
+                print_slow(f"{target.name} is affected by {effect_name}!")
+
     def _initialize_abilities(self):
         """Sets abilities based on the player's role."""
         if self.role == "Warrior":
@@ -236,8 +263,7 @@ class Player(Character):
     # --- Warrior Abilities ---
     def _power_strike(self, target):
         print_slow(f"{self.name} uses Power Strike!")
-        damage = int(self.attack * 1.5)
-        target.take_damage(damage, self.name, self)
+        self.deal_enhanced_damage(target, 1.5)
 
     def _shield_wall(self):
         print_slow(f"{self.name} raises their shield, preparing for the next attack!")
@@ -247,8 +273,7 @@ class Player(Character):
         print_slow(f"{self.name} throws caution to the wind with a Reckless Swing!")
         self.defense -= 3
         print_slow(f"{self.name}'s defense is temporarily lowered!")
-        damage = self.attack * 2
-        target.take_damage(damage, self.name, self)
+        self.deal_basic_damage(target, 2.0)
 
     # --- Mage Abilities ---
     def _fireball(self, target):
@@ -271,19 +296,16 @@ class Player(Character):
     def _aimed_shot(self, target):
         print_slow(f"{self.name} takes careful aim for an Aimed Shot!")
         if random.random() > 0.15:  # 85% chance to hit
-            damage = self.attack + random.randint(8, 15)
-            target.take_damage(damage, self.name, self)
+            self.deal_random_bonus_damage(target, 8, 15)
         else:
             print_slow(f"{self.name}'s arrow misses!")
 
     def _poison_arrow(self, target):
         print_slow(f"{self.name} fires a Poison Arrow!")
         target.take_damage(self.attack, self.name, self)
-        if "poison" not in target.status_effects:
-            print_slow(f"{target.name} has been poisoned!")
-            target.status_effects["poison"] = 3
-        else:
-            print_slow(f"{target.name} is already poisoned!")
+        self.apply_status_effect(
+            target, "poison", 3, f"{target.name} has been poisoned!"
+        )
 
     def _double_shot(self, target):
         print_slow(f"{self.name} fires two arrows in quick succession!")
@@ -294,8 +316,7 @@ class Player(Character):
     # --- Paladin Abilities ---
     def _paladin_holy_strike(self, target):
         print_slow(f"{self.name} delivers a radiant Holy Strike!")
-        damage = self.attack + random.randint(10, 18)
-        target.take_damage(damage, self.name, self)
+        self.deal_random_bonus_damage(target, 10, 18)
 
     def _divine_shield(self):
         print_slow(f"{self.name} is blessed with a Divine Shield!")
@@ -314,8 +335,7 @@ class Player(Character):
         if random.random() < 0.2:
             print_slow(f"{self.name} misses the mark!")
             return
-        damage = int(self.attack * 1.6) + random.randint(5, 10)
-        target.take_damage(damage, self.name, self)
+        self.deal_basic_damage(target, 1.6, 5, 10)
 
     def _evasion(self):
         print_slow(f"{self.name} focuses on Evasion, ready to slip past attacks!")
@@ -345,15 +365,15 @@ class Player(Character):
 
     def _curse(self, target):
         print_slow(f"{self.name} places a dark curse on {target.name}!")
-        target.status_effects["cursed"] = 4
+        self.apply_status_effect(
+            target, "cursed", 4, f"{target.name} feels weakened by the curse!"
+        )
         target.attack = max(1, target.attack - 5)
-        print_slow(f"{target.name} feels weakened by the curse!")
 
     # --- Monk Abilities ---
     def _chi_strike(self, target):
         print_slow(f"{self.name} focuses chi energy into a powerful strike!")
-        damage = self.attack + random.randint(8, 15)
-        target.take_damage(damage, self.name, self)
+        self.deal_random_bonus_damage(target, 8, 15)
         # Chi strike restores some mana
         self.mana = min(self.max_mana, self.mana + 5)
         print_slow(f"{self.name} regains 5 mana through meditation!")
@@ -383,17 +403,20 @@ class Player(Character):
     def _intimidate(self, target):
         print_slow(f"{self.name} lets out a terrifying war cry!")
         target.attack = max(1, target.attack - 4)
-        target.status_effects["intimidated"] = 3
-        print_slow(f"{target.name} is intimidated and deals less damage!")
+        self.apply_status_effect(
+            target,
+            "intimidated",
+            3,
+            f"{target.name} is intimidated and deals less damage!",
+        )
 
     def _berserker_strike(self, target):
         print_slow(f"{self.name} strikes with wild, uncontrolled fury!")
         # High damage but chance to miss
         if random.random() > 0.25:  # 75% chance to hit
-            damage = self.attack * 2 + random.randint(5, 15)
-            target.take_damage(damage, self.name, self)
+            self.deal_basic_damage(target, 2.0, 5, 15)
         else:
-            print_slow(f"{self.name} swings wildly and misses!")
+            print_slow(f"{self.name}'s wild swing misses completely!")
 
     # --- Druid Abilities ---
     def _natures_wrath(self, target):
@@ -531,7 +554,7 @@ NECROMANCER_WEAPONS = {
 }
 
 MONK_WEAPONS = {
-    "1": Weapon("Wooden Staff", 3, 2, 0.10, None),
+    "1": Weapon("Quarterstaff", 3, 2, 0.10, None),
     "2": Weapon("Iron Knuckles", 4, 1, 0.15, stunning_effect),
     "3": Weapon("Jade Staff", 3, 3, 0.12, blessed_effect),
     "4": Weapon("Fists of Fury", 5, 0, 0.20, None),
@@ -763,14 +786,14 @@ class Game:
     def run(self):
         self.setup()
         while self.player.is_alive() and self.boss.is_alive():
-            self._start_turn()
+            self._reset_player_state()
             if not self._player_turn():
                 break
             if not self._boss_turn():
                 break
         self._end_game()
 
-    def _start_turn(self):
+    def _player_turn(self):
         clear_screen()
         skip_turn = process_status_effects(self.player)
         if skip_turn:  # Player is stunned
