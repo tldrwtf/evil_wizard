@@ -2,6 +2,7 @@
 
 import random
 import time
+import inspect
 
 # --- Utility Functions ---
 def clear_screen():
@@ -115,6 +116,18 @@ class Player(Character):
                 "2": {"name": "Poison Arrow", "cost": 10, "effect": self._poison_arrow},
                 "3": {"name": "Double Shot", "cost": 25, "effect": self._double_shot}
             }
+        elif self.role == "Paladin":
+            self.abilities = {
+                "1": {"name": "Holy Strike", "cost": 15, "effect": self._paladin_holy_strike},
+                "2": {"name": "Divine Shield", "cost": 15, "effect": self._divine_shield},
+                "3": {"name": "Lay on Hands", "cost": 30, "effect": self._lay_on_hands}
+            }
+        elif self.role == "Rogue":
+            self.abilities = {
+                "1": {"name": "Backstab", "cost": 15, "effect": self._rogue_backstab},
+                "2": {"name": "Evasion", "cost": 10, "effect": self._evasion},
+                "3": {"name": "Flurry", "cost": 25, "effect": self._flurry}
+            }
 
     # --- Warrior Abilities ---
     def _power_strike(self, target):
@@ -122,7 +135,7 @@ class Player(Character):
         damage = int(self.attack * 1.5)
         target.take_damage(damage, self.name)
 
-    def _shield_wall(self, target):
+    def _shield_wall(self):
         print_slow(f"{self.name} raises their shield, preparing for the next attack!")
         self.is_defending = True # Handled in the main game loop
     
@@ -139,12 +152,12 @@ class Player(Character):
         damage = random.randint(15, 25)
         target.take_damage(damage, self.name)
 
-    def _heal_spell(self, target):
+    def _heal_spell(self):
         print_slow(f"{self.name} casts a healing spell!")
         heal_amount = random.randint(20, 30)
         self.heal(heal_amount)
     
-    def _arcane_shield(self, target):
+    def _arcane_shield(self):
         print_slow(f"{self.name} conjures an Arcane Shield!")
         # For simplicity, we'll just boost defense temporarily
         self.defense += 5
@@ -173,6 +186,44 @@ class Player(Character):
         target.take_damage(self.attack, self.name)
         time.sleep(0.5)
         target.take_damage(self.attack, self.name)
+
+    # --- Paladin Abilities ---
+    def _paladin_holy_strike(self, target):
+        print_slow(f"{self.name} delivers a radiant Holy Strike!")
+        damage = self.attack + random.randint(10, 18)
+        target.take_damage(damage, self.name)
+
+    def _divine_shield(self):
+        print_slow(f"{self.name} is blessed with a Divine Shield!")
+        self.is_defending = True
+        self.defense += 6
+        print_slow(f"{self.name}'s defense surges temporarily!")
+
+    def _lay_on_hands(self):
+        print_slow(f"{self.name} uses Lay on Hands to heal wounds!")
+        heal_amount = random.randint(25, 35)
+        self.heal(heal_amount)
+
+    # --- Rogue Abilities ---
+    def _rogue_backstab(self, target):
+        print_slow(f"{self.name} attempts a deadly Backstab!")
+        if random.random() < 0.2:
+            print_slow(f"{self.name} misses the mark!")
+            return
+        damage = int(self.attack * 1.6) + random.randint(5, 10)
+        target.take_damage(damage, self.name)
+
+    def _evasion(self):
+        print_slow(f"{self.name} focuses on Evasion, ready to slip past attacks!")
+        self.is_defending = True
+        self.defense += 3
+        print_slow(f"{self.name}'s agility increases defense temporarily!")
+
+    def _flurry(self, target):
+        print_slow(f"{self.name} unleashes a Flurry of strikes!")
+        for _ in range(3):
+            target.take_damage(max(1, self.attack - 2), self.name)
+            time.sleep(0.3)
 
 class Boss(Character):
     """The main antagonist."""
@@ -226,10 +277,12 @@ def choose_class():
     print("1: Warrior - A sturdy fighter with high defense and reliable damage.")
     print("2: Mage - A powerful spellcaster with high damage and healing abilities.")
     print("3: Archer - A nimble marksman who uses precision and status effects.")
+    print("4: Paladin - A holy knight with strong defenses and supportive magic.")
+    print("5: Rogue - A swift striker specializing in burst damage and evasion.")
     
     choice = ""
-    while choice not in ["1", "2", "3"]:
-        choice = input("Enter your choice (1-3): ")
+    while choice not in ["1", "2", "3", "4", "5"]:
+        choice = input("Enter your choice (1-5): ")
 
     player_name = input("Enter your hero's name: ")
     if not player_name:
@@ -241,6 +294,12 @@ def choose_class():
         return Player(player_name, 80, 10, 4, 100, "Mage")
     elif choice == "3":
         return Player(player_name, 100, 15, 6, 70, "Archer")
+    elif choice == "4":
+        return Player(player_name, 130, 11, 10, 80, "Paladin")
+    elif choice == "5":
+        return Player(player_name, 90, 17, 4, 60, "Rogue")
+    return None
+
 
 def process_status_effects(character):
     """Applies and removes status effects at the start of a turn."""
@@ -357,7 +416,21 @@ class Game:
             time.sleep(1)
             return False
         self.player.mana -= chosen_ability['cost']
-        chosen_ability['effect'](self.boss)
+        effect = chosen_ability['effect']
+        # Support both targeted and targetless abilities
+        try:
+            params = inspect.signature(effect).parameters
+            if len(params) == 0:
+                effect()
+            else:
+                effect(self.boss)
+        except Exception:
+            # Fallback: try targeted call
+            try:
+                effect(self.boss)
+            except Exception:
+                # Last resort: try without arguments
+                effect()
         return True
 
     def _use_potion(self):
