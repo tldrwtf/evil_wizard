@@ -513,6 +513,12 @@ class Player(Character):
                 },
             }
             self.base_attack = 5  # Mages have low base attack
+        elif self.role == "Archer":
+            self.abilities = {
+                "1": {"name": "Aimed Shot", "cost": 10, "effect": self._aimed_shot},
+                "2": {"name": "Poison Arrow", "cost": 15, "effect": self._poison_arrow},
+                "3": {"name": "Double Shot", "cost": 20, "effect": self._double_shot},
+            }
         elif self.role == "Paladin":
             self.abilities = {
                 "1": {
